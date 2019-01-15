@@ -31,6 +31,8 @@ cd ../nginx-tests
 
 cat <<JIL >test.conf
 error_log $TESTROOT/error.log debug;
+working_directory $TESTROOT;
+worker_rlimit_core 500M;
 worker_processes 1;
 
 events {
@@ -42,7 +44,7 @@ http {
         listen 9005;
         root $TESTROOT;
         redis_auth on;
-        redis_auth_redirect "/login";
+        redis_auth_redirect "/login/";
 
         location / {
 
@@ -50,6 +52,9 @@ http {
 
         location /login {
             redis_auth off;
+            rewrite /login/(.*) /\$1  break;
+            proxy_pass http://localhost:2971/;
+            proxy_redirect     off;
         }
 
         location /diffcookie {

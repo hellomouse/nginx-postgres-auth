@@ -145,8 +145,8 @@ static ngx_int_t ngx_http_redis_auth_handler(ngx_http_request_t *r) {
     ngx_str_t                   val;
     ngx_int_t                   n;
     ngx_table_elt_t             *location;
-    redisContext                *c;
-    redisReply                  *rep;
+    redisContext                *c = NULL;
+    redisReply                  *rep = NULL;
 
     /* get this module's configuration (scoped to location) */
     racf = ngx_http_get_module_loc_conf(r, ngx_http_redis_auth_module);
@@ -165,8 +165,6 @@ static ngx_int_t ngx_http_redis_auth_handler(ngx_http_request_t *r) {
     }
 
     /* it is probably terribly inefficient to do this way... */
-    c = NULL;
-    rep = NULL;
 
     /* connect to server */
     c = redisConnect((const char *)racf->backend.data, racf->backend_port);
@@ -180,7 +178,6 @@ static ngx_int_t ngx_http_redis_auth_handler(ngx_http_request_t *r) {
 
     /* query for key */
     rep = redisCommand(c, "EXISTS %s", val.data);
-
     if (rep == NULL || rep->type == REDIS_REPLY_ERROR) {
         /* error querying redis server */
         ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
@@ -194,6 +191,8 @@ static ngx_int_t ngx_http_redis_auth_handler(ngx_http_request_t *r) {
     }
 
     /* default to send a redir */
+    ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
+            "sending redir to %s:%d", racf->backend.data, racf->backend_port);
 
 send_redir:
     /* no/invalid auth cookie, so send a redirect to a place to log in */
