@@ -43,8 +43,7 @@ http {
     server {
         listen 9005;
         root $TESTROOT;
-        redis_auth on;
-        redis_auth_redirect "/login/";
+        redis_auth "http://localhost:9005/login/";
 
         location / {
 
@@ -59,6 +58,7 @@ http {
 
         location /diffcookie {
             redis_auth_cookie "cookie";
+            redis_auth "helo world";
         }
     }
 }

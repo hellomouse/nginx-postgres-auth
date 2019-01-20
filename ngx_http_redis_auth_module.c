@@ -11,28 +11,31 @@ typedef struct {
     ngx_flag_t  enable;
     ngx_str_t   backend;
     ngx_int_t   backend_port;
-    ngx_str_t   redirect;
+    ngx_str_t   error_redir;
+    ngx_str_t   error_page;
+    ngx_str_t   error_str;
     ngx_str_t   cookie;
 } ngx_http_redis_auth_conf_t;
 
 /* function definitions for later on */
 static void *ngx_http_redis_auth_create_conf(ngx_conf_t *cf);
 static char *ngx_http_redis_auth_merge_conf(ngx_conf_t *cf, void *parent, void *child);
+static char *ngx_http_redis_auth_set_opt(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_redis_auth_init(ngx_conf_t *cf);
 
 /* directives provided by this module */
 static ngx_command_t ngx_http_redis_auth_commands[] = {
     {
-        /* directive string - enable or not */
+        /* directive string - disable or use page/str/redir */
         ngx_string("redis_auth"),
         /* can be used anywhere, and has a single flag of enable/disable */
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
         /* simple set on/off */
-        ngx_conf_set_flag_slot,
+        ngx_http_redis_auth_set_opt,
         /* flags apply to each location */
         NGX_HTTP_LOC_CONF_OFFSET,
-        /* memory address offset to read/write from/to */
-        offsetof(ngx_http_redis_auth_conf_t, enable),
+        /* memory address offset to read/write from/to (unused) */
+        0,
         NULL
     },
     {
@@ -59,19 +62,6 @@ static ngx_command_t ngx_http_redis_auth_commands[] = {
         NGX_HTTP_LOC_CONF_OFFSET,
         /* memory address offset to read/write from/to */
         offsetof(ngx_http_redis_auth_conf_t, backend_port),
-        NULL
-    },
-    {
-        /* directive string - url to redirect to for logging in */
-        ngx_string("redis_auth_redirect"),
-        /* can be used anywhere, and takes in a single argument */
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-        /* simple set string to value */
-        ngx_conf_set_str_slot,
-        /* flags apply to each location */
-        NGX_HTTP_LOC_CONF_OFFSET,
-        /* memory address offset to read/write from/to */
-        offsetof(ngx_http_redis_auth_conf_t, redirect),
         NULL
     },
     {
@@ -139,12 +129,56 @@ ngx_module_t ngx_http_redis_auth_module = {
     NGX_MODULE_V1_PADDING
 };
 
+/* handler for config options */
+static char *ngx_http_redis_auth_set_opt(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    ngx_http_redis_auth_conf_t  *racf = (ngx_http_redis_auth_conf_t *)conf;
+    ngx_str_t        *value;
+
+    /* fetch the value */
+    value = cf->args->elts;
+
+    /* first determine what this is */
+    if (!ngx_strcasecmp(value[1].data, (u_char *) "off")) {
+        /* flag to turn off redis auth */
+        racf->enable = 0;
+        return NGX_CONF_OK;
+    }
+
+    /* reset all config values */
+    racf->enable = 1;
+    racf->error_page = NULL;
+    racf->error_redir = NULL;
+    racf->error_str = NULL;
+
+    if (*value[1].data == '/') {
+        /* path to file */
+        racf->error_page = value[1];
+    } else if (!ngx_strncasecmp(value[1].data, "http://") ||
+                !ngx_strncasecmp(value[1].data, "https://")) {
+        /* http redirect */
+        racf->error_redir = value[1];
+    } else {
+        /* string */
+        racf->error_str = value[1];
+    }
+
+    if (cmd->post)
+        /* call post conf if necessary */
+        return cmd->post->post_handler(cf, cmd->post, field);
+
+    /* all ok! */
+    return NGX_CONF_OK;
+}
+
+
 /* hook for requests - handler */
 static ngx_int_t ngx_http_redis_auth_handler(ngx_http_request_t *r) {
     ngx_http_redis_auth_conf_t  *racf;
     ngx_str_t                   val;
     ngx_int_t                   n;
     ngx_table_elt_t             *location;
+    ngx_chain_t                 out;
+    ngx_buf_t                   *b = NULL;
     redisContext                *c = NULL;
     redisReply                  *rep = NULL;
 
@@ -190,18 +224,19 @@ static ngx_int_t ngx_http_redis_auth_handler(ngx_http_request_t *r) {
         goto end;
     }
 
-    /* default to send a redir */
-    ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
-            "sending redir to %s:%d", racf->backend.data, racf->backend_port);
+    /* default to error */
 
-send_redir:
+send_err:
+
+    /* priority is redirect */
+
     /* no/invalid auth cookie, so send a redirect to a place to log in */
     if (r->http_version < NGX_HTTP_VERSION_11) {
-        /* send 302 for clients that don't support 303 */
+        /* send 302 for clients that don't support 307 */
         r->headers_out.status = NGX_HTTP_MOVED_TEMPORARILY;
         n = NGX_HTTP_MOVED_TEMPORARILY;
     } else {
-        /* send 303 for clients that do */
+        /* send 307 for clients that do */
         r->headers_out.status = NGX_HTTP_TEMPORARY_REDIRECT;
         n = NGX_HTTP_TEMPORARY_REDIRECT;
     }
@@ -230,7 +265,11 @@ end:
     if (rep) freeReplyObject(rep);
     if (c) redisFree(c);
 
-    return n;
+    if (buf)
+        /* if there is a buffer then that means we want to send some content */
+        return 
+    else
+        return n;
 }
 
 /* config initalization function */
@@ -261,11 +300,10 @@ static char *ngx_http_redis_auth_merge_conf(ngx_conf_t *cf, void *parent, void *
     ngx_conf_merge_value(curr->enable, prev->enable, 0);
     ngx_conf_merge_str_value(curr->backend, prev->backend, "127.0.0.1");
     ngx_conf_merge_value(curr->backend_port, prev->backend_port, 6379);
-    ngx_conf_merge_str_value(curr->redirect, prev->redirect, "/auth");
+    ngx_conf_merge_str_value(curr->error_redir, prev->error_redir, NULL);
+    ngx_conf_merge_str_value(curr->error_page, prev->error_page, NULL);
+    ngx_conf_merge_str_value(curr->error_str, prev->error_str, NULL);
     ngx_conf_merge_str_value(curr->cookie, prev->cookie, "ra_cookie");
-
-    /* TODO: parameter validation here... */
-    /* ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "ahh");  */
 
     return NGX_CONF_OK;
 }
