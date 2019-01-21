@@ -1,21 +1,21 @@
 # extra includes
-CORE_LIBS="$CORE_LIBS -lhiredis"
+CORE_LIBS="$CORE_LIBS -lpq"
 
 # main module stuff
-ngx_addon_name=ngx_http_redis_auth_module
+ngx_addon_name=ngx_http_postgres_auth_module
 
 # we are an HTTP since we want to be placed at the end of all of
 # the builtin headers
 ngx_module_type=HTTP
-ngx_module_name=ngx_http_redis_auth_module
+ngx_module_name=ngx_http_postgres_auth_module
 
 if test -n "$ngx_module_link"; then
     # new build system
-    ngx_module_srcs="$ngx_addon_dir/ngx_http_redis_auth_module.c"
+    ngx_module_srcs="$ngx_addon_dir/ngx_http_postgres_auth_module.c"
 
     . auto/module
 else
     # old build system
     HTTP_MODULES="$HTTP_MODULES $ngx_module_name"
-    NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/ngx_http_redis_auth_module.c"
+    NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/ngx_http_postgres_auth_module.c"
 fi
