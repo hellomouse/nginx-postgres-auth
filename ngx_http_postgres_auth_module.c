@@ -145,8 +145,8 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
     ngx_str_t                       val;
     ngx_int_t                       n;
     ngx_table_elt_t                 *location;
-    PGconn                          *c;
-    PGresult                        *res;
+    PGconn                          *c = NULL;
+    PGresult                        *res = NULL;
     const char                      *p[2];
     char                            *z;
 
@@ -184,7 +184,7 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
 
     /* query for key */
     res = PQexecParams(c,
-        "SELECT username FROM $1 WHERE session_key=$2",
+        "SELECT username FROM $1 WHERE session_key=$2 AND expiry > now()",
         2, /* 2 params */
         NULL, /* let backend guess param types */
         p, /* array of params */
@@ -205,7 +205,9 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
         location = ngx_list_push(&r->headers_in.headers);
         if (location == NULL) {
             n = NGX_HTTP_INTERNAL_SERVER_ERROR;
-            goto end;
+            ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
+                "errror adding X-Auth-Username header");
+            goto skiphdr;
         }
 
         /* get the username */
@@ -215,7 +217,7 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
         /* need to make a copy of the string since the request freeing will kill it */
         val.data = (unsigned char *)z;
         val.len = strlen(z);
-        
+
         /* add it to the headers */
         location->hash = 1;
         location->key.len = sizeof("X-Auth-Username") - 1;
@@ -223,6 +225,7 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
         location->value.len = val.len;
         location->value.data = ngx_pstrdup(r->pool, &val);
 
+skiphdr:
         /* pass to next handler */
         n = NGX_OK;
         goto end;
