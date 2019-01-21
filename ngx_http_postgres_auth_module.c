@@ -172,20 +172,20 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
     c = PQconnectdb((const char *)pacf->backend_opts.data);
     if (c == NULL || PQstatus(c) != CONNECTION_OK) {
         /* error connecting to postgres server */
-        ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
-            "errror connecting to backend server %s", pacf->backend_opts.data);
+        ngx_log_error(NGX_LOG_CRIT, r->connection->log, 0,
+            "errror connecting to backend server %s: %s", pacf->backend_opts.data, PQerrorMessage(c));
         n = NGX_HTTP_INTERNAL_SERVER_ERROR;
         goto end;
     }
 
     /* setup params for query */
-    p[0] = (const char *)pacf->table_name.data;
-    p[1] = (const char *)val.data;
+    p[1] = (const char *)pacf->table_name.data;
+    p[0] = (const char *)val.data;
 
     /* query for key */
     res = PQexecParams(c,
-        "SELECT username FROM $1 WHERE session_key=$2 AND expiry > now()",
-        2, /* 2 params */
+        "SELECT username FROM sessions WHERE session_key=$1 AND expiry > now()",
+        1, /* 1 params */
         NULL, /* let backend guess param types */
         p, /* array of params */
         NULL, /* all text params */
@@ -194,18 +194,17 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
     );
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         /* error querying postgres server */
-        ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
-            "errror querying backend server %s", pacf->backend_opts.data);
+        ngx_log_error(NGX_LOG_CRIT, r->connection->log, 0,
+            "errror querying backend server %s: %s", pacf->backend_opts.data, PQerrorMessage(c));
         n = NGX_HTTP_INTERNAL_SERVER_ERROR;
         goto end;
     } else if (PQntuples(res) >= 1) {
         /* access granted! */
-
+#if 0
         /* push the X-Auth-Username header to input headers */
         location = ngx_list_push(&r->headers_in.headers);
         if (location == NULL) {
-            n = NGX_HTTP_INTERNAL_SERVER_ERROR;
-            ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
+            ngx_log_error(NGX_LOG_CRIT, r->connection->log, 0,
                 "errror adding X-Auth-Username header");
             goto skiphdr;
         }
@@ -224,7 +223,7 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
         location->key.data = (u_char *) "X-Auth-Username";
         location->value.len = val.len;
         location->value.data = ngx_pstrdup(r->pool, &val);
-
+#endif
 skiphdr:
         /* pass to next handler */
         n = NGX_OK;
