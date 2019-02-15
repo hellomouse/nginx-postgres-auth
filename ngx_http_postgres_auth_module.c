@@ -148,7 +148,8 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
     PGconn                          *c = NULL;
     PGresult                        *res = NULL;
     const char                      *p[2];
-    char                            *z;
+    /* TODO: fix X-Auth-Username header */
+    /* char                            *z; */
 
     /* get this module's configuration (scoped to location) */
     pacf = ngx_http_get_module_loc_conf(r, ngx_http_postgres_auth_module);
@@ -223,8 +224,8 @@ static ngx_int_t ngx_http_postgres_auth_handler(ngx_http_request_t *r) {
         location->key.data = (u_char *) "X-Auth-Username";
         location->value.len = val.len;
         location->value.data = ngx_pstrdup(r->pool, &val);
-#endif
 skiphdr:
+#endif
         /* pass to next handler */
         n = NGX_OK;
         goto end;
