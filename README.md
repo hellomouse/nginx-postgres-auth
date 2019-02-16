@@ -1,5 +1,9 @@
 # nginx-postgres-auth
 
+## ⚠️⚠️ big red thingy ⚠️⚠️
+
+Hi, this repository is no longer maintained since Hellomouse has moved away from a hacky SSO to a proper Kerberos system.
+
 ## Introduction
 
 This module inserts a request handler into the nginx chain that will force
